@@ -200,8 +200,6 @@ func SetPogoBreakpoints(existingConnection *sql.DB) {
 
 	if err != nil {
 		fmt.Printf("Error setting breakpoints (%v) in database: %v\n", breaks, err)
-	} else {
-		fmt.Printf("Set breakpoints to %v\n", breaks)
 	}
 }
 
