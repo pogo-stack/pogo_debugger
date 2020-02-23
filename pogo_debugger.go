@@ -16,6 +16,15 @@ import (
 )
 
 var db *sql.DB
+var globalLock = &sync.Mutex{}
+
+var debuggerState = make(map[string]*threadState)
+var verifiedBreakpoints = make(map[string][]*pageBreakpoint)
+var notificationBlocks = make(map[string]bool)
+var mux map[string]func(http.ResponseWriter, *http.Request)
+var threadNumberLock = &sync.Mutex{}
+var threadToIntMap = make(map[string]int)
+var threadIntToStringMap = make(map[int]string)
 
 type myHandler struct{}
 
@@ -60,16 +69,8 @@ type pageBreakpoint struct {
 	Id   string `json:"id"`
 }
 
-var globalLock = &sync.Mutex{}
-
-var debuggerState = make(map[string]*threadState)
-var verifiedBreakpoints = make(map[string][]*pageBreakpoint)
-var notificationBlocks = make(map[string]bool)
-
-var mux map[string]func(http.ResponseWriter, *http.Request)
-
 func (*myHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	var path = r.URL.Path
+	path := r.URL.Path
 	if path == "/favicon.ico" {
 		return
 	}
@@ -96,7 +97,7 @@ func debuggerStatus(w http.ResponseWriter, r *http.Request) {
 
 	globalLock.Lock()
 	for k := range debuggerState {
-		var count = 0
+		count := 0
 		db.QueryRow("select count(1) from __pogo_debugger_queue where id = $1 and response is null", k).Scan(&count)
 		if count == 0 {
 			delete(debuggerState, k)
@@ -139,8 +140,9 @@ func debuggerSetBreakpoints(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("error marshalling to json:", err)
 		return
 	}
+	fmt.Printf("debugger - request to set breakpoints %v\n", string(string_vr))
 
-	var vb = ""
+	vb := ""
 	err = db.QueryRow("select __pogo_break_points_verify($1)", string(string_vr)).Scan(&vb)
 	if err != nil {
 		fmt.Println("error setting breakpoints:", err)
@@ -154,9 +156,11 @@ func debuggerSetBreakpoints(w http.ResponseWriter, r *http.Request) {
 
 	for _, value := range vbUnmarshalled {
 		verifiedBreakpoints[value.Page] = value.Breakpoints
+		strBreakpoints, _ := json.Marshal(value)
+		fmt.Printf("debugger - setting verified breakpoint %v+\n", string(strBreakpoints))
 	}
 
-	var verifiedResponse = make([]*verificationRequestResponse, 0)
+	verifiedResponse := make([]*verificationRequestResponse, 0)
 	for verifiedPage, verifiedBreakpoint := range verifiedBreakpoints {
 		verifiedResponse = append(verifiedResponse, &verificationRequestResponse{
 			Page:        verifiedPage,
@@ -164,7 +168,6 @@ func debuggerSetBreakpoints(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	//SetPogoBreakpoints(db)
 	debuggerUpdateActiveBreakpoints()
 
 	marshalledBreakpoints, _ := json.Marshal(verifiedResponse)
@@ -174,7 +177,7 @@ func debuggerSetBreakpoints(w http.ResponseWriter, r *http.Request) {
 }
 
 func mapBreakpoints() map[string]map[string]bool {
-	var breakpointChecks = make(map[string]map[string]bool)
+	breakpointChecks := make(map[string]map[string]bool)
 
 	for key, vb := range verifiedBreakpoints {
 		pageBreakpoints := make(map[string]bool)
@@ -191,7 +194,7 @@ func mapBreakpoints() map[string]map[string]bool {
 ///updates database connection to include current breakpoints
 func SetPogoBreakpoints(existingConnection *sql.DB) {
 
-	var mappedBreakpoints = mapBreakpoints()
+	mappedBreakpoints := mapBreakpoints()
 
 	breakpointChecksMarshalled, _ := json.Marshal(mappedBreakpoints)
 	breaks := string(breakpointChecksMarshalled)
@@ -200,6 +203,8 @@ func SetPogoBreakpoints(existingConnection *sql.DB) {
 
 	if err != nil {
 		fmt.Printf("Error setting breakpoints (%v) in database: %v\n", breaks, err)
+	} else {
+		fmt.Printf("Set breakpoints to %v\n", breaks)
 	}
 }
 
@@ -274,47 +279,6 @@ func debuggerStep(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// func debuggerEvaluateExpression(w http.ResponseWriter, r *http.Request) {
-
-// 	type evaluationRequest struct {
-// 		Expression string `json:"expression"`
-// 	}
-
-// 	w.Header().Set("Content-Type", `"application/json"; charset=utf-8`)
-
-// 	er := &evaluationRequest{}
-// 	decoder := json.NewDecoder(r.Body)
-// 	err := decoder.Decode(&er)
-
-// 	if err != nil {
-// 		fmt.Println("error unmarshalling from json to breakpoint request:", err)
-// 		return
-// 	}
-
-// 	parsedQuery, _ := url.ParseQuery(r.URL.RawQuery)
-// 	if x, found := parsedQuery["thread_id"]; found {
-// 		if found {
-// 			command := &debuggerResponse{
-// 				Command:            "evaluate",
-// 				EvaluateExpression: er.Expression,
-// 			}
-// 			marshalledCommand, _ := json.Marshal(command)
-
-// 			globalLock.Lock()
-// 			for k := range debuggerState {
-// 				requestedThreadId, _ := strconv.Atoi(x[0])
-// 				if debuggerState[k].ThreadIdInt == requestedThreadId {
-// 					_, err := db.Exec("update __pogo_debugger_queue set response=$1 where id = $2", marshalledCommand, k)
-// 					if err != nil {
-// 						fmt.Println("error sending response:", err)
-// 					}
-// 				}
-// 			}
-// 			globalLock.Unlock()
-// 		}
-// 	}
-// }
-
 func debuggerClearBreakpoints(w http.ResponseWriter, r *http.Request) {
 	globalLock.Lock()
 
@@ -338,34 +302,6 @@ func debuggerClearBreakpoints(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, "Breakpoints cleared")
 }
 
-// func debuggerContinue(w http.ResponseWriter, r *http.Request) {
-// 	parsedQuery, _ := url.ParseQuery(r.URL.RawQuery)
-
-// 	if x, found := parsedQuery["request_id"]; found {
-// 		if found {
-// 			command := &debuggerResponse{
-// 				Command: "continue",
-// 			}
-// 			marshalledCommand, _ := json.Marshal(command)
-// 			_, err := db.Exec("update __pogo_debugger_queue set response=$1 where id = $2", marshalledCommand, x[0])
-// 			if err != nil {
-// 				fmt.Println("error sending response:", err)
-// 			} else {
-// 				globalLock.Lock()
-// 				delete(debuggerState, x[0])
-// 				notificationBlocks[x[0]] = true
-// 				globalLock.Unlock()
-// 			}
-// 			io.WriteString(w, fmt.Sprintf("should contine request %v", x))
-// 		}
-// 	}
-
-// }
-
-var threadNumberLock = &sync.Mutex{}
-var threadToIntMap = make(map[string]int)
-var threadIntToStringMap = make(map[int]string)
-
 func mapThreadIdToInt(threadId string) int {
 
 	var result int
@@ -384,7 +320,6 @@ func mapThreadIdToInt(threadId string) int {
 }
 
 func debuggerNotifficationReceived(db *sql.DB, pNotiffication string) {
-	//fmt.Printf("Work found for debugger: %v\n", pNotiffication)
 	ir := &breakpointRequest{}
 
 	err := json.Unmarshal([]byte(pNotiffication), &ir)
@@ -393,7 +328,7 @@ func debuggerNotifficationReceived(db *sql.DB, pNotiffication string) {
 		return
 	}
 
-	var request = ""
+	request := ""
 	err = db.QueryRow("select request from __pogo_debugger_queue where id = $1", ir.Hash).Scan(&request)
 	if err != nil {
 		fmt.Println("error unmarshalling from json to breakpoint request:", err)
@@ -442,9 +377,7 @@ func waitForNotification(l *pq.Listener, db *sql.DB) {
 		if n == nil {
 			return
 		}
-		//fmt.Printf("%v received notification for debugger [%v]\n", time.Now(), n.Extra)
 
-		//fmt.Println()
 		go debuggerNotifficationReceived(db, n.Extra)
 		return
 
@@ -473,11 +406,9 @@ func StartPogoDebugger(connectionString string, port int) {
 	mux["/"] = debuggerMain
 	mux["/status"] = debuggerStatus
 	mux["/verified_breakpoints"] = debuggerVerifiedBreakpoints
-	//mux["/command/continue"] = debuggerContinue
 	mux["/command/continue_all"] = debuggerContinueAll
 	mux["/command/set_breakpoints"] = debuggerSetBreakpoints
 	mux["/command/clear_breakpoints"] = debuggerClearBreakpoints
-	//mux["/command/evaluate"] = debuggerEvaluateExpression
 	mux["/command/step"] = debuggerStep
 
 	reportProblem := func(ev pq.ListenerEventType, err error) {
