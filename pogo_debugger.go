@@ -431,7 +431,7 @@ func StartPogoDebugger(connectionString string, port int) {
 		fmt.Printf("\x1b[2mDebugger notice: %v\x1b[0m\n", notice.Message)
 	})
 
-	db := sql.OpenDB(connector)
+	db = sql.OpenDB(connector)
 	if err != nil {
 		log.Fatal(err)
 	}
