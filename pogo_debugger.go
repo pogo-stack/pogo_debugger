@@ -421,7 +421,7 @@ func debuggerAttachRequest(w http.ResponseWriter, r *http.Request) {
 //StartPogoDebugger ...
 func StartPogoDebugger(connectionString string, port int) {
 	var err error
-	base, err := pq.NewConnector(Config_connection_string)
+	base, err := pq.NewConnector(connectionString)
 
 	if err != nil {
 		log.Fatal(err)
@@ -431,7 +431,7 @@ func StartPogoDebugger(connectionString string, port int) {
 		fmt.Printf("\x1b[2mDebugger notice: %v\x1b[0m\n", notice.Message)
 	})
 
-	db := sql.OpenDB(connector) //"postgres", Config_connection_string
+	db := sql.OpenDB(connector)
 	if err != nil {
 		log.Fatal(err)
 	}
