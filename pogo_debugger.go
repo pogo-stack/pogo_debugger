@@ -205,17 +205,17 @@ func SetPogoBreakpoints(existingConnection *sql.DB) {
 	breakpointChecksMarshalled, _ := json.Marshal(mappedBreakpoints)
 	breaks := string(breakpointChecksMarshalled)
 
-	//attachmentMarshalled, _ := json.Marshal(debuggerAttachment)
-	//attachmentMarshalledString := string(attachmentMarshalled)
+	attachmentMarshalled, _ := json.Marshal(debuggerAttachment)
+	attachmentMarshalledString := string(attachmentMarshalled)
 
-	//_, err := existingConnection.Exec("select __pogo_break_points_set($1, $2);", breaks, attachmentMarshalledString)
-	_, err := existingConnection.Exec("select __pogo_break_points_set($1);", breaks)
+	_, err := existingConnection.Exec("select __pogo_break_points_set($1, $2);", breaks, attachmentMarshalledString)
+	//_, err := existingConnection.Exec("select __pogo_break_points_set($1);", breaks)
 
 	if err != nil {
 		fmt.Printf("Error setting breakpoints (%v) in database: %v\n", breaks, err)
 	} else {
-		//fmt.Printf("Set breakpoints to %v; %v\n", breaks, attachmentMarshalledString)
-		fmt.Printf("Set breakpoints to %v\n", breaks)
+		fmt.Printf("Set breakpoints to %v; %v\n", breaks, attachmentMarshalledString)
+		//fmt.Printf("Set breakpoints to %v\n", breaks)
 	}
 }
 
