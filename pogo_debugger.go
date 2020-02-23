@@ -93,7 +93,7 @@ func debuggerMain(w http.ResponseWriter, r *http.Request) {
 
 func debuggerStatus(w http.ResponseWriter, r *http.Request) {
 
-	w.Header().Set("Content-Type", `"application/json"; charset=utf-8`)
+	w.Header().Set("Content-Type", `application/json; charset=utf-8`)
 
 	globalLock.Lock()
 	for k := range debuggerState {
@@ -124,7 +124,7 @@ func debuggerSetBreakpoints(w http.ResponseWriter, r *http.Request) {
 		Breakpoints []*pageBreakpoint `json:"breakpoints"`
 	}
 
-	w.Header().Set("Content-Type", `"application/json"; charset=utf-8`)
+	w.Header().Set("Content-Type", `application/json; charset=utf-8`)
 
 	vr := make([]*verificationRequestResponse, 0)
 	decoder := json.NewDecoder(r.Body)
@@ -252,7 +252,7 @@ func debuggerContinueAll(w http.ResponseWriter, r *http.Request) {
 }
 
 func debuggerStep(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", `"application/json"; charset=utf-8`)
+	w.Header().Set("Content-Type", `application/json; charset=utf-8`)
 
 	parsedQuery, _ := url.ParseQuery(r.URL.RawQuery)
 	fmt.Printf("Stepping thread %v#", parsedQuery)
