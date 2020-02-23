@@ -28,6 +28,12 @@ var threadIntToStringMap = make(map[int]string)
 
 type myHandler struct{}
 
+type debuggerAttachmentRequestType struct {
+	StopOnEntry bool `json:"stopOnEntry"`
+}
+
+var debuggerAttachment = &debuggerAttachmentRequestType{}
+
 type breakpointRequest struct {
 	Hash           string `json:"hash"`
 	Line           int64  `json:"line"`
@@ -93,7 +99,7 @@ func debuggerMain(w http.ResponseWriter, r *http.Request) {
 
 func debuggerStatus(w http.ResponseWriter, r *http.Request) {
 
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Content-Type", `application/json; charset=utf-8`)
 
 	globalLock.Lock()
 	for k := range debuggerState {
@@ -124,7 +130,7 @@ func debuggerSetBreakpoints(w http.ResponseWriter, r *http.Request) {
 		Breakpoints []*pageBreakpoint `json:"breakpoints"`
 	}
 
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Content-Type", `application/json; charset=utf-8`)
 
 	vr := make([]*verificationRequestResponse, 0)
 	decoder := json.NewDecoder(r.Body)
@@ -199,11 +205,16 @@ func SetPogoBreakpoints(existingConnection *sql.DB) {
 	breakpointChecksMarshalled, _ := json.Marshal(mappedBreakpoints)
 	breaks := string(breakpointChecksMarshalled)
 
+	//attachmentMarshalled, _ := json.Marshal(debuggerAttachment)
+	//attachmentMarshalledString := string(attachmentMarshalled)
+
+	//_, err := existingConnection.Exec("select __pogo_break_points_set($1, $2);", breaks, attachmentMarshalledString)
 	_, err := existingConnection.Exec("select __pogo_break_points_set($1);", breaks)
 
 	if err != nil {
 		fmt.Printf("Error setting breakpoints (%v) in database: %v\n", breaks, err)
 	} else {
+		//fmt.Printf("Set breakpoints to %v; %v\n", breaks, attachmentMarshalledString)
 		fmt.Printf("Set breakpoints to %v\n", breaks)
 	}
 }
@@ -252,7 +263,7 @@ func debuggerContinueAll(w http.ResponseWriter, r *http.Request) {
 }
 
 func debuggerStep(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Content-Type", `application/json; charset=utf-8`)
 
 	parsedQuery, _ := url.ParseQuery(r.URL.RawQuery)
 	fmt.Printf("Stepping thread %v#", parsedQuery)
@@ -388,10 +399,39 @@ func waitForNotification(l *pq.Listener, db *sql.DB) {
 	}
 }
 
+func debuggerAttachRequest(w http.ResponseWriter, r *http.Request) {
+
+	w.Header().Set("Content-Type", `"application/json"; charset=utf-8`)
+
+	vr := &debuggerAttachmentRequestType{}
+	decoder := json.NewDecoder(r.Body)
+	err := decoder.Decode(&vr)
+
+	if err != nil {
+		fmt.Println("error unmarshalling from json to attachment request:", err)
+		return
+	}
+
+	debuggerAttachment = vr
+
+	io.WriteString(w, "ok")
+
+}
+
 //StartPogoDebugger ...
 func StartPogoDebugger(connectionString string, port int) {
 	var err error
-	db, err = sql.Open("postgres", connectionString)
+	base, err := pq.NewConnector(Config_connection_string)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	connector := pq.ConnectorWithNoticeHandler(base, func(notice *pq.Error) {
+		fmt.Printf("\x1b[2mDebugger notice: %v\x1b[0m\n", notice.Message)
+	})
+
+	db := sql.OpenDB(connector) //"postgres", Config_connection_string
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -410,6 +450,7 @@ func StartPogoDebugger(connectionString string, port int) {
 	mux["/command/set_breakpoints"] = debuggerSetBreakpoints
 	mux["/command/clear_breakpoints"] = debuggerClearBreakpoints
 	mux["/command/step"] = debuggerStep
+	mux["/command/attach_request"] = debuggerAttachRequest
 
 	reportProblem := func(ev pq.ListenerEventType, err error) {
 		if err != nil {
