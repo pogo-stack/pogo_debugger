@@ -394,7 +394,7 @@ func waitForNotification(l *pq.Listener, db *sql.DB) {
 
 	case <-time.After(60 * time.Second):
 		go l.Ping()
-		fmt.Printf("%v pinging debugger listener \n", time.Now())
+		//fmt.Printf("%v pinging debugger listener \n", time.Now())
 		return
 	}
 }
